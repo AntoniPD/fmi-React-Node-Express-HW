@@ -5,25 +5,11 @@ const validator = require("validator");
 const bcrypt = require("bcrypt");
 const passwordValidator = require("password-validator");
 
-// const sendErrorResponse = require("../utils");
-
 var router = express.Router();
 
 const paswordSchema = new passwordValidator();
 
-paswordSchema.is().min(8); // Minimum length 8
-// .is().max(100)                                  // Maximum length 100
-// .has().uppercase()                              // Must have uppercase letters
-// .has().lowercase()                              // Must have lowercase letters
-// .has().digits()                                 // Must have digits
-// .has().not().spaces()                           // Should not have spaces
-// .is().not().oneOf(['Passw0rd', 'Password123']);
-
-// middleware that is specific to this router
-router.use(function timeLog(req, res, next) {
-  console.log("Time: ", Date.now());
-  next();
-});
+paswordSchema.is().min(8);
 
 router.get("/", function (req, res) {
   UserModel.find().then(function (users) {
@@ -55,8 +41,108 @@ router.get("/:id", async function (req, res) {
   }
 });
 
+router.post("/", async function (req, res) {
+  const {
+    name,
+    username,
+    password,
+    gender,
+    role,
+    description,
+    status,
+  } = req.body;
+  if (
+    validator.isAlpha(name) &&
+    username.length < 16 &&
+    password.length > 8 &&
+    (gender == "male" || gender == "female" || gender == "other") &&
+    (role == "admin" || role == "user") &&
+    description.length < 513 &&
+    (status == "active" || status == "suspended" || status == "deactivated")
+  ) {
+    try {
+      const user = await UserModel.find({
+        username: username,
+      }).exec();
+
+      if (user.length >= 1) {
+        return res.status(422).json({
+          message: "User with this username already exists",
+        });
+      }
+
+      if (paswordSchema.validate(password)) {
+        const hash = await new Promise((resolve, reject) => {
+          resolve(bcrypt.hash(password, 10));
+        });
+        const newUser = new UserModel({
+          name: name,
+          username: username,
+          password: hash,
+          gender: gender,
+          role: role,
+          description: description,
+          status: status,
+        });
+        newUser.save();
+        return res.location(`/${newUser.id}`).status(201).send(newUser);
+      } else {
+        return res.status(401).json({
+          mesage: "Invalid password",
+        });
+      }
+    } catch (err) {
+      console.error(err);
+
+      return res.status(400).send({
+        message: `Something went wrong: ${err.message}`,
+      });
+    }
+  } else {
+    return res.send({
+      message: "Registration failed",
+    });
+  }
+});
+
+router.get("/:id/recipes", async (req, res) => {
+  const id = req.params.id;
+  if (!validator.isMongoId(id)) {
+    return res.send({
+      message: "Invalid id",
+    });
+  }
+  try {
+    const user = await UserModel.findById({ _id: id }).exec();
+    if (!user) {
+      return res.status(404).send({ message: "User not found" });
+    } else {
+      const recipes = await RecipeModel.find({ cooker: id }).exec();
+      if (!recipes) {
+        return res.status(404).json({
+          message: "No recipes found",
+        });
+      } else {
+        return res.status(200).send(recipes);
+      }
+    }
+  } catch (err) {
+    return res.status(400).send({
+      message: `Something went wrong: ${err.message}`,
+    });
+  }
+});
+
 router.put("/:id", async function (req, res) {
-  const { name, username, gender, role, description, status } = req.body;
+  const {
+    name,
+    username,
+    gender,
+    role,
+    imageUrl,
+    description,
+    status,
+  } = req.body;
   const id = req.params.id;
   if (!validator.isMongoId(id)) {
     return res.send({
@@ -86,6 +172,7 @@ router.put("/:id", async function (req, res) {
               username: username,
               gender: gender,
               role: role,
+              imageUrl: imageUrl,
               description: description,
               status: status,
               dateOfUpdate: Date.now(),
@@ -138,115 +225,6 @@ router.delete("/:id", async function (req, res) {
   }
 });
 
-router.post("/", async function (req, res) {
-  const {
-    name,
-    username,
-    password,
-    gender,
-    role,
-    description,
-    status,
-  } = req.body;
-  if (
-    validator.isAlpha(name) &&
-    username.length < 16 &&
-    password.length > 8 &&
-    (gender == "male" || gender == "female" || gender == "other") &&
-    (role == "admin" || role == "user") &&
-    description.length < 513 &&
-    (status == "active" || status == "suspended" || status == "deactivated")
-  ) {
-    try {
-      const user = await UserModel.find({
-        username: username,
-      }).exec();
-
-      if (user.length >= 1) {
-        return res.status(422).json({
-          message: "User with this username already exists",
-        });
-      }
-
-      if (paswordSchema.validate(password)) {
-        const hash = await new Promise((resolve, reject) => {
-          resolve(bcrypt.hash(password, 10));
-        });
-        const newUser = new UserModel({
-          name: name,
-          username: username,
-          password: hash,
-          gender: gender,
-          role: role,
-          description: description,
-          status: status,
-        });
-        newUser.save();
-        return res.location(`/${result.id}`).status(201).send(newUser);
-      } else {
-        return res.status(401).json({
-          mesage: "Invalid password",
-        });
-      }
-    } catch (err) {
-      console.error(err);
-
-      return res.status(400).send({
-        message: `Something went wrong: ${err.message}`,
-      });
-    }
-  } else {
-    return res.send({
-      message: "Registration failed",
-    });
-  }
-  var user = {
-    name: req.body.name,
-    username: req.body.username,
-    password: req.body.password,
-    gender: req.body.gender,
-    role: req.body.role,
-    description: req.body.description,
-    status: req.body.status,
-  };
-
-  var data = new UserModel(user);
-  var saved = data.save().then(function (result) {
-    res.location(`/${result.id}`).status(201).send(result);
-  });
-  // var err = user.validateSync();
-  // if (err && err.message)
-  //   return res.send(err.message.split(":")[2].split(",")[0]);
-});
-
-router.get("/:id/recipes", async (req, res) => {
-  const id = req.params.id;
-  if (!validator.isMongoId(id)) {
-    return res.send({
-      message: "Invalid id",
-    });
-  }
-  try {
-    const user = await UserModel.findById({ _id: id }).exec();
-    if (!user) {
-      return res.status(404).send({ message: "User not found" });
-    } else {
-      const recipes = await RecipeModel.find({ cooker: id }).exec();
-      if (!recipes) {
-        return res.status(404).json({
-          message: "No recipes found",
-        });
-      } else {
-        return res.status(200).send(recipes);
-      }
-    }
-  } catch (err) {
-    return res.status(400).send({
-      message: `Something went wrong: ${err.message}`,
-    });
-  }
-});
-
 router.get("/:id/recipes/:recipeId", async (req, res) => {
   const id = req.params.id;
   if (!validator.isMongoId(id)) {
@@ -287,6 +265,7 @@ router.post("/:id/recipes", async function (req, res) {
     shortDescription,
     cookTime,
     products,
+    imageUrl,
     longDescription,
     tags,
   } = req.body;
@@ -296,12 +275,12 @@ router.post("/:id/recipes", async function (req, res) {
       message: "Invalid id",
     });
   }
-  console.log(id);
   if (
     title.length <= 80 &&
     shortDescription.length <= 256 &&
     products.length > 0 &&
-    longDescription.length <= 2048
+    longDescription.length <= 2048 &&
+    imageUrl != null
   ) {
     try {
       const user = await UserModel.findById({ _id: id }).exec();
@@ -315,21 +294,21 @@ router.post("/:id/recipes", async function (req, res) {
           shortDescription: shortDescription,
           cookTime: cookTime,
           products: products,
+          imageUrl: imageUrl,
           longDescription: longDescription,
           tags: tags,
         });
-        console.log(recipe);
         recipe.save();
-        return res.send(recipe);
+        return res.location(`/${recipe.id}`).status(201).send(recipe);
       }
     } catch (err) {
       return res.status(400).send({
-        message: "Something went wrong",
+        message: `Something went wrong: ${err.message}`,
       });
     }
   } else {
     return res.send({
-      message: "Something failed",
+      message: "Some fields are missing or incorrect!",
     });
   }
 });
@@ -446,18 +425,5 @@ router.delete("/:id/recipes/:recipeId", async function (req, res) {
     });
   }
 });
-
-// define the about route
-router.get("/about", function (req, res) {
-  res.send("About users");
-});
-
-// app.get('/users/:userId/recipes/:recipeId', function (req, res) {
-//     res.send(req.params)
-//   })
-
-// app.get('/users/:userId/recipes', function (req, res) {
-//     res.send(req.params)
-//   })
 
 module.exports = router;

@@ -6,6 +6,10 @@ const recipeSchema = new mongoose.Schema({
   shortDescription: { type: String, maxlength: 256 },
   cookTime: { type: Number },
   products: { type: JSON, required: true },
+  imageUrl: {
+    type: String,
+    required: true,
+  },
   longDescription: { type: String, maxlength: 2048 },
   tags: { type: JSON },
   dateOfRegister: { type: Date, default: Date.now },
